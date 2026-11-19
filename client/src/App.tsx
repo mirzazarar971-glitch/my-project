@@ -1,6 +1,6 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { BrowserRouter, Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
-import { Activity, AlignLeft, ArrowDownToLine, ArrowRight, ArrowRightLeft, ArrowUpRight, BadgeCheck, Binary, Blend, Braces, Brackets, CalendarClock, CaseSensitive, ChevronDown, ChevronRight, Clock3, Code2, CodeXml, Command, Copy, Database, ExternalLink, FileCode, FileCode2, FileJson2, FilePenLine, FileText, Fingerprint, GitCompareArrows, Globe2, Grid2X2, Hash, Heart, KeyRound, Languages, LayoutDashboard, Link as LinkIcon, Link2, ListChecks, ListX, Menu, Minimize, Minimize2, MonitorPlay, MonitorSmartphone, Moon, MoveLeft, Network, Palette, PanelsTopLeft, Paintbrush, Pipette, Play, QrCode, Regex, ScanSearch, ScanText, Search, Shield, ShieldCheck, Sparkles, Square, Sun, Table2, Terminal, TextQuote, Timer, Type, Unlink, Wrench, X, type LucideIcon } from 'lucide-react'
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { BrowserRouter, Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate, useNavigationType, useParams } from 'react-router-dom'
+import { Activity, AlignLeft, ArrowDownToLine, ArrowRight, ArrowRightLeft, ArrowUpRight, BadgeCheck, Binary, Blend, Blocks, BookOpen, Braces, Brackets, CalendarClock, CaseSensitive, ChevronDown, ChevronRight, Clock3, Code2, CodeXml, Command, Copy, Database, ExternalLink, FileCode, FileCode2, FileJson2, FilePenLine, FileText, Fingerprint, GitCompareArrows, Globe2, GraduationCap, Grid2X2, Hash, Heart, KeyRound, Languages, LayoutDashboard, Link as LinkIcon, Link2, ListChecks, ListX, Menu, Minimize, Minimize2, MonitorPlay, MonitorSmartphone, Moon, MousePointer2, MoveLeft, Network, Palette, PanelsTopLeft, Paintbrush, Pipette, Play, QrCode, Regex, ScanSearch, ScanText, Search, Settings2, Shield, ShieldCheck, Sparkles, Square, Sun, Table2, Terminal, TextQuote, Timer, Type, Unlink, UserRound, Wrench, X, Zap, type LucideIcon } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import toast, { Toaster } from 'react-hot-toast'
 import { categories, findTool, type ToolDefinition } from './tools/catalog'
@@ -32,17 +32,62 @@ function ToolIcon({ name, size = 19 }: { name: string; size?: number }) {
   return <Icon size={size} strokeWidth={1.8} aria-hidden="true" />
 }
 
+function scrollWindowTo(top: number) {
+  const rootStyle = document.documentElement.style
+  const scrollBehavior = rootStyle.scrollBehavior
+  rootStyle.scrollBehavior = 'auto'
+  window.scrollTo(0, top)
+  requestAnimationFrame(() => {
+    if (rootStyle.scrollBehavior === 'auto') rootStyle.scrollBehavior = scrollBehavior
+  })
+}
+
 function AppFrame() {
   const { theme, setTheme } = usePreferences()
-  const activeTools = useActiveTools()
   const setEnabledSlugs = useAvailability((state) => state.setEnabledSlugs)
   const location = useLocation()
+  const navigationType = useNavigationType()
   const [searchOpen, setSearchOpen] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
+  const isAdminRoute = location.pathname.startsWith('/admin')
+  const currentScrollKey = useRef(location.key)
+  const initialScrollHandled = useRef(false)
+  const savedScrollPositions = useRef(new Map<string, number>())
+
+  useLayoutEffect(() => {
+    const rememberScrollPosition = () => {
+      savedScrollPositions.current.set(currentScrollKey.current, window.scrollY)
+    }
+    window.addEventListener('scroll', rememberScrollPosition, { passive: true })
+    return () => window.removeEventListener('scroll', rememberScrollPosition)
+  }, [])
+
+  useLayoutEffect(() => {
+    const startsAtTop = location.pathname === '/' || location.pathname === '/tools' || location.pathname === '/about'
+    if (currentScrollKey.current === location.key) {
+      if (!initialScrollHandled.current) {
+        initialScrollHandled.current = true
+        if (startsAtTop) scrollWindowTo(0)
+      }
+      return
+    }
+
+    currentScrollKey.current = location.key
+    initialScrollHandled.current = true
+    if (navigationType === 'POP') {
+      scrollWindowTo(savedScrollPositions.current.get(location.key) ?? 0)
+    } else if (startsAtTop) {
+      scrollWindowTo(0)
+    }
+  }, [location.key, location.pathname, navigationType])
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
   }, [theme])
+
+  useEffect(() => {
+    setMobileOpen(false)
+  }, [location.pathname])
 
   useEffect(() => {
     const slug = location.pathname.match(/^\/tools\/([^/]+)/)?.[1]
@@ -58,6 +103,8 @@ function AppFrame() {
           ? 'Disclaimer'
           : location.pathname === '/contact'
             ? 'Contact Us'
+            : location.pathname === '/about'
+              ? 'About DevTools Hub'
             : ''
     const title = tool
       ? `${tool.name} — DevTools Hub`
@@ -71,7 +118,7 @@ function AppFrame() {
                 ? `${infoTitle} — DevTools Hub`
                 : 'DevTools Hub — Developer tools, all in one place'
     const description = tool?.description
-      ?? (category ? `Browser-local ${category.toLowerCase()} tools for a faster, private developer workflow.` : infoTitle ? `${infoTitle} for DevTools Hub.` : 'A fast, private developer toolkit for formatting, encoding, debugging, and building.')
+      ?? (category ? `Browser-local ${category.toLowerCase()} tools for a faster, private developer workflow.` : location.pathname === '/about' ? 'Learn about DevTools Hub, its developer tools, and how it can help your workflow.' : infoTitle ? `${infoTitle} for DevTools Hub.` : 'A fast, private developer toolkit for formatting, encoding, debugging, and building.')
     document.title = title
     document.querySelector('meta[name="description"]')?.setAttribute('content', description)
     document.querySelector('meta[property="og:title"]')?.setAttribute('content', title)
@@ -102,57 +149,20 @@ function AppFrame() {
 
   return (
     <div className="app-shell">
-      {mobileOpen && <button className="mobile-backdrop" aria-label="Close navigation" onClick={() => setMobileOpen(false)} />}
-      <aside className={`sidebar ${mobileOpen ? 'sidebar-open' : ''}`}>
-        <Link to="/" className="brand-lockup" aria-label="DevTools Hub home" onClick={() => setMobileOpen(false)}>
-          <span className="brand-mark"><Command size={19} /></span>
-          <span className="brand-name">devtools<span>hub</span></span>
-        </Link>
-        <div className="sidebar-label">WORKSPACE</div>
-        <nav className="primary-nav" aria-label="Main navigation">
-          <NavLink to="/" end className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} onClick={() => setMobileOpen(false)}>
-            <LayoutDashboard size={17} /> Overview
-          </NavLink>
-          <NavLink to="/tools" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} onClick={() => setMobileOpen(false)}>
-            <Wrench size={17} /> All tools <span className="nav-count">{activeTools.length}</span>
-          </NavLink>
-        </nav>
-        <div className="sidebar-label categories-label">CATEGORIES</div>
-        <nav className="category-nav" aria-label="Tool categories">
-          {categories.map((category) => (
-            <NavLink
-              key={category}
-              to={`/category/${encodeURIComponent(category)}`}
-              className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
-              onClick={() => setMobileOpen(false)}
-            >
-              <span className={`category-dot dot-${categorySlug(category)}`} />
-              {category}
-              <span className="nav-count">              {activeTools.filter((tool) => tool.category === category).length}</span>
-            </NavLink>
-          ))}
-        </nav>
-        <div className="sidebar-bottom">
-          <div className="privacy-card">
-            <span className="privacy-icon"><Shield size={15} /></span>
-            <div><strong>Privacy-first</strong><span>Most tools run in your browser.</span></div>
-          </div>
-          <div className="sidebar-footer">
-            <span className="online-dot" /> Browser tools ready
-            <span className="version-label">v1.0</span>
-          </div>
-        </div>
-      </aside>
-
       <main className="main-shell">
-        <header className="topbar">
-          <button className="icon-button mobile-menu-button" onClick={() => setMobileOpen(true)} aria-label="Open navigation"><Menu size={19} /></button>
-          <div className="breadcrumbs">
-            <Link to="/">Hub</Link><ChevronRight size={14} /><span>{breadcrumb(location.pathname)}</span>
-          </div>
+        {!isAdminRoute && <header className="topbar">
+          <Link to="/" className="brand-lockup" aria-label="DevTools home">
+            <span className="brand-mark"><Command size={18} /></span>
+            <span className="brand-name">DevTools</span>
+          </Link>
+          <nav className={`public-nav ${mobileOpen ? 'public-nav-open' : ''}`} aria-label="Main navigation">
+            <NavLink to="/" end onClick={() => setMobileOpen(false)}>Home</NavLink>
+            <NavLink to="/tools" onClick={() => setMobileOpen(false)}>All Tools</NavLink>
+            <NavLink to="/about" onClick={() => setMobileOpen(false)}>About</NavLink>
+          </nav>
           <div className="topbar-actions">
             <button className="search-trigger" onClick={() => { setSearchOpen(true); setMobileOpen(false) }} aria-label="Search tools">
-              <Search size={16} /><span>Search tools...</span><kbd>Ctrl K</kbd>
+              <Search size={16} /><span>Search tools</span><kbd>Ctrl K</kbd>
             </button>
             <button
               className="theme-toggle"
@@ -163,11 +173,15 @@ function AppFrame() {
             >
               {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
             </button>
+            <button className="icon-button mobile-menu-button" onClick={() => setMobileOpen((open) => !open)} aria-label={mobileOpen ? 'Close navigation' : 'Open navigation'} aria-expanded={mobileOpen}>
+              {mobileOpen ? <X size={19} /> : <Menu size={19} />}
+            </button>
           </div>
-        </header>
+        </header>}
         <div className="page-scroll">
           <Routes>
-            <Route path="/" element={<Dashboard onSearch={() => setSearchOpen(true)} />} />
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/about" element={<AboutPage />} />
             <Route path="/tools" element={<ToolDirectory />} />
             <Route path="/category/:category" element={<ToolDirectory />} />
             <Route path="/tools/:slug" element={<ToolPage key={location.pathname} />} />
@@ -181,18 +195,12 @@ function AppFrame() {
             <Route path="/contact" element={<ContactPage />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
-          <footer className="page-footer">
+          {!isAdminRoute && <footer className="page-footer">
             <div className="page-footer-top">
-              <span>Built for the people who build the web.</span>
-              <nav className="footer-links" aria-label="Legal and contact">
-                <Link to="/privacy-policy">Privacy Policy</Link>
-                <Link to="/terms-of-service">Terms of Service</Link>
-                <Link to="/disclaimer">Disclaimer</Link>
-                <Link to="/contact">Contact Us</Link>
-              </nav>
+              <Link to="/" className="footer-brand"><span className="brand-mark"><Command size={16} /></span><strong>DevTools</strong></Link>
+              <span className="footer-copyright">© 2026 DevTools Hub. All rights reserved.</span>
             </div>
-            <span className="footer-copyright">© 2026 DevTools Hub</span>
-          </footer>
+          </footer>}
         </div>
       </main>
       {searchOpen && <SearchDialog onClose={() => setSearchOpen(false)} />}
@@ -204,22 +212,6 @@ function AppFrame() {
 
 function categorySlug(category: string) {
   return category.toLowerCase().replace(/[^a-z]+/g, '-')
-}
-
-function breadcrumb(path: string) {
-  if (path === '/') return 'Overview'
-  if (path === '/tools') return 'All tools'
-  const toolMatch = path.match(/^\/tools\/([^/]+)/)
-  if (toolMatch) return findTool(decodeURIComponent(toolMatch[1]))?.name ?? 'Tool'
-  if (path.startsWith('/category/')) return decodeURIComponent(path.split('/')[2])
-  if (path === '/login' || path === '/register') return 'Overview'
-  if (path === '/profile') return 'Profile'
-  if (path === '/admin') return 'Admin'
-  if (path === '/privacy-policy') return 'Privacy Policy'
-  if (path === '/terms-of-service') return 'Terms of Service'
-  if (path === '/disclaimer') return 'Disclaimer'
-  if (path === '/contact') return 'Contact Us'
-  return 'Not found'
 }
 
 function PageHeading({ eyebrow, title, description, action }: { eyebrow?: string; title: string; description?: string; action?: ReactNode }) {
@@ -410,48 +402,55 @@ function ToolCard({ tool, compact = false }: { tool: ToolDefinition; compact?: b
         </span>
         <ArrowUpRight className="tool-card-arrow" size={16} />
       </Link>
-      <button
-        className={`favorite-button ${favorite ? 'is-favorite' : ''}`}
-        aria-label={`${favorite ? 'Remove' : 'Add'} ${tool.name} ${favorite ? 'from' : 'to'} favorites`}
-        title={favorite ? 'Remove from favorites' : 'Add to favorites'}
-        onClick={changeFavorite}
-      >
-        <Heart size={15} fill={favorite ? 'currentColor' : 'none'} />
-      </button>
+      <div className="tool-card-footer">
+        <Link to={`/tools/${tool.slug}`} className="tool-open-action" onClick={() => trackToolClick(tool.slug, `/tools/${tool.slug}`)}>Open Tool <ArrowRight size={14} /></Link>
+        <button
+          className={`favorite-button ${favorite ? 'is-favorite' : ''}`}
+          aria-label={`${favorite ? 'Remove' : 'Add'} ${tool.name} ${favorite ? 'from' : 'to'} favorites`}
+          title={favorite ? 'Remove from favorites' : 'Add to favorites'}
+          onClick={changeFavorite}
+        >
+          <Heart size={15} fill={favorite ? 'currentColor' : 'none'} />
+        </button>
+      </div>
     </article>
   )
 }
 
-function Dashboard({ onSearch }: { onSearch: () => void }) {
+function Dashboard() {
   const activeTools = useActiveTools()
   const favorites = usePreferences((state) => state.favorites)
   const recent = usePreferences((state) => state.recent)
   const popular = ['json-formatter', 'base64-encoder', 'uuid-generator', 'regex-tester'].map((slug) => findTool(slug)).filter((tool): tool is ToolDefinition => tool !== undefined && activeTools.some((active) => active.slug === tool.slug))
   const recentTools = recent.map((slug) => findTool(slug)).filter((tool): tool is ToolDefinition => tool !== undefined && activeTools.some((active) => active.slug === tool.slug))
   const favoriteTools = favorites.map((slug) => findTool(slug)).filter((tool): tool is ToolDefinition => tool !== undefined && activeTools.some((active) => active.slug === tool.slug))
+  const availableCategories = categories.filter((category) => activeTools.some((tool) => tool.category === category))
   return (
     <div className="page-content dashboard-page">
       <section className="welcome-panel">
         <div className="welcome-copy">
-          <div className="welcome-eyebrow">FOR THE EVERYDAY WORKFLOW</div>
-          <h1>Useful tools for<br /><span>everyday development.</span></h1>
-          <p>Format code, compare text, convert data, and generate helpful snippets. Most processing stays in your browser.</p>
+          <div className="welcome-eyebrow"><span className="hero-badge-dot" />FREE ACCESS <span aria-hidden="true">·</span> NO LOGIN</div>
+          <h1>All Your Developer Tools <span>in One Place</span></h1>
+          <p>Simple, fast and free tools for everyone. No account required.</p>
           <div className="welcome-actions">
-            <Link to="/tools" className="button button-primary">Browse all tools <ArrowRight size={16} /></Link>
-            <button type="button" className="button button-secondary home-search-button" onClick={onSearch}><Search size={15} />Search tools</button>
+            <Link to="/tools" className="button button-primary">Explore All Tools <ArrowRight size={16} /></Link>
           </div>
+        </div>
+        <div className="hero-art" aria-hidden="true">
+          <div className="hero-art-glow" />
+          <div className="hero-code-card"><span className="hero-code-top"><i /><i /><i /><span>devtools.js</span></span><code><b>const</b> tools = [<br /><span>  "format", "convert",</span><br /><span>  "build", "create"</span><br />];<br /><b>ready</b>(tools);</code><span className="hero-art-caption"><span className="online-dot" /> 60+ tools, ready when you are</span></div>
         </div>
       </section>
 
       <section className="stats-row" aria-label="Platform statistics">
         <div className="stat-item"><span className="stat-icon blue"><Wrench size={16} /></span><div><strong>{activeTools.length}</strong><span>Tools ready to use</span></div></div>
-        <div className="stat-item"><span className="stat-icon violet"><LayoutDashboard size={16} /></span><div><strong>{categories.length}</strong><span>Focused categories</span></div></div>
+        <div className="stat-item"><span className="stat-icon violet"><LayoutDashboard size={16} /></span><div><strong>{availableCategories.length}</strong><span>Focused categories</span></div></div>
         <div className="stat-item"><span className="stat-icon green"><Shield size={16} /></span><div><strong>Local-first</strong><span>Most tools run in-browser</span></div></div>
         <div className="stat-item stat-note"><div><strong>No account needed</strong><span>Jump in and get things done.</span></div><ArrowUpRight size={17} /></div>
       </section>
 
       <section className="section-block">
-        <SectionTitle title="Popular tools" subtitle="Common jobs, one click away." action={<Link to="/tools" className="text-link">Browse all <ArrowRight size={14} /></Link>} />
+        <SectionTitle title="Popular Developer Tools" subtitle="A few handy places to start." action={<Link to="/tools" className="text-link">View all tools <ArrowRight size={14} /></Link>} />
         <div className="tool-grid">{popular.map((tool) => <ToolCard key={tool.slug} tool={tool} />)}</div>
       </section>
       {(recentTools.length > 0 || favoriteTools.length > 0) && (
@@ -461,10 +460,168 @@ function Dashboard({ onSearch }: { onSearch: () => void }) {
         </div>
       )}
       <section className="category-strip">
-        <div><div className="eyebrow">BROWSE BY CATEGORY</div><h2>Go straight to the kind of work you’re doing.</h2><p>{activeTools.length} tools across {categories.length} practical categories.</p></div>
-        <div className="category-pills">{categories.map((category) => <Link key={category} to={`/category/${encodeURIComponent(category)}`} className="category-pill"><span className={`category-dot dot-${categorySlug(category)}`} />{category}<ChevronRight size={13} /></Link>)}</div>
+        <div><div className="eyebrow">BROWSE BY CATEGORY</div><h2>Go straight to the kind of work you’re doing.</h2><p>{activeTools.length} tools across {availableCategories.length} practical categories.</p></div>
+        <div className="category-pills">{availableCategories.map((category) => <Link key={category} to={`/category/${encodeURIComponent(category)}`} className="category-pill"><span className={`category-dot dot-${categorySlug(category)}`} />{category}<ChevronRight size={13} /></Link>)}</div>
+      </section>
+      <section className="home-section how-section">
+        <SectionTitle title="How to Use Our Tools" subtitle="Get from a task to a useful result in a few simple steps." />
+        <ol className="steps-grid">
+          {[
+            ['01', 'Choose a Tool', 'Select the developer tool that matches your task.', Wrench],
+            ['02', 'Enter Your Input', 'Paste your code, text, JSON, URL, or other required information.', FileText],
+            ['03', 'Configure Options', 'Select the settings or options available in that tool.', Settings2],
+            ['04', 'Get Your Result', 'Process, convert, or format your input and see the result.', Play],
+            ['05', 'Copy or Download', 'Copy the output or download it when the tool supports it.', Copy],
+          ].map(([number, title, description, Icon]) => {
+            const StepIcon = Icon as LucideIcon
+            return <li className="step-card" key={number as string}><span className="step-number">{number as string}</span><span className="step-icon"><StepIcon size={18} /></span><h3>{title as string}</h3><p>{description as string}</p></li>
+          })}
+        </ol>
+      </section>
+      <section className="home-section why-section">
+        <div className="why-intro"><div className="eyebrow">BUILT FOR YOUR WORKFLOW</div><h2>Why Choose DevTools Hub?</h2><p>Useful, focused utilities that help you spend less time switching context.</p></div>
+        <div className="benefit-grid">
+          {[
+            ['Free access', 'Use the public tools without a subscription.', Sparkles],
+            ['No registration', 'Start using tools without creating an account.', UserRound],
+            ['Fast processing', 'Get results quickly with focused, lightweight tools.', Zap],
+            ['Easy to use', 'Clear interfaces keep common tasks straightforward.', MousePointer2],
+            ['Many utilities, one place', 'Find text, data, encoding, and coding tools together.', Blocks],
+            ['Privacy-aware experience', 'Most tools process input in your browser; some features use external services.', ShieldCheck],
+          ].map(([title, description, Icon]) => {
+            const BenefitIcon = Icon as LucideIcon
+            return <article className="benefit-card" key={title as string}><span><BenefitIcon size={18} /></span><h3>{title as string}</h3><p>{description as string}</p></article>
+          })}
+        </div>
+      </section>
+      <section className="home-section faq-section">
+        <SectionTitle title="Frequently Asked Questions" subtitle="A few quick answers before you dive in." />
+        <div className="faq-list">
+          <details><summary>Is DevTools Hub free?</summary><p>Yes. The public developer tools are available to use for free.</p></details>
+          <details><summary>Do I need to create an account?</summary><p>No account is required to use public tools. The private administrator area is separate.</p></details>
+          <details><summary>How do I use the developer tools?</summary><p>Choose a tool, enter your input, adjust any available options, then process and copy or download the result.</p></details>
+          <details><summary>Can I use DevTools Hub on mobile?</summary><p>Yes. The public navigation, tool directory, and tool pages adapt to smaller screens.</p></details>
+          <details><summary>Are my tools available directly in the browser?</summary><p>Most tools process data in your browser. The IP Address Information tool uses ipapi.co for lookups, and some tools rely on other browser or network capabilities.</p></details>
+        </div>
       </section>
     </div>
+  )
+}
+
+function AboutPage() {
+  const activeTools = useActiveTools()
+  const offerCards: Array<{ title: string; description: string; icon: LucideIcon; examples: ToolDefinition[] }> = [
+    {
+      title: 'Text Processing Tools',
+      description: 'Work with words, characters, lines, and common text formats.',
+      icon: Type,
+      examples: activeTools.filter((tool) => tool.category === 'Text'),
+    },
+    {
+      title: 'JSON Formatting and Validation',
+      description: 'Format, validate, convert, and inspect JSON data.',
+      icon: Braces,
+      examples: activeTools.filter((tool) => tool.category === 'JSON'),
+    },
+    {
+      title: 'HTML and CSS Utilities',
+      description: 'Format markup and styles, create layouts, and preview design snippets.',
+      icon: CodeXml,
+      examples: activeTools.filter((tool) => tool.category === 'HTML / CSS / JS' && /html|css/i.test(tool.name)),
+    },
+    {
+      title: 'JavaScript Developer Tools',
+      description: 'Format and minify JavaScript or experiment in a browser playground.',
+      icon: Code2,
+      examples: activeTools.filter((tool) => /javascript/i.test(tool.name) || tool.slug === 'javascript-playground'),
+    },
+    {
+      title: 'Useful Development Utilities',
+      description: 'Handle handy everyday tasks like UUIDs, timestamps, colors, and regular expressions.',
+      icon: Wrench,
+      examples: activeTools.filter((tool) => tool.category === 'Utilities'),
+    },
+  ]
+  const benefits: Array<[string, string, LucideIcon]> = [
+    ['Free access', 'Use the available public tools without a subscription.', Sparkles],
+    ['No registration required', 'Get started with public tools without creating an account.', UserRound],
+    ['Simple interface', 'Focused controls make common tasks easy to follow.', MousePointer2],
+    ['Convenient workflow', 'Find useful utilities together and move quickly between tasks.', Zap],
+    ['Many tools in one place', 'Work with text, data, markup, code, and more.', Blocks],
+    ['Desktop and mobile friendly', 'Use the responsive site on the screen that suits you.', MonitorSmartphone],
+  ]
+  const audiences: Array<[string, string, LucideIcon]> = [
+    ['Web Developers', 'Quickly format, convert, and inspect the files used in web projects.', Globe2],
+    ['Software Engineering Students', 'Practice with useful tools while learning programming concepts.', GraduationCap],
+    ['Programming Beginners', 'Explore approachable utilities for common coding tasks.', BookOpen],
+    ['Frontend Developers', 'Work with HTML, CSS, JavaScript, and interface snippets.', PanelsTopLeft],
+    ['Backend Developers', 'Handle JSON, SQL, encoding, and other data-focused tasks.', Database],
+    ['Code and Data Professionals', 'Keep everyday developer utilities close at hand.', Terminal],
+  ]
+  const steps = [
+    'Explore the available developer tools.',
+    'Select the tool you need.',
+    'Enter your input.',
+    'Process your task.',
+    'Copy or download your result where supported.',
+  ]
+
+  return (
+    <article className="page-content about-page">
+      <section className="about-hero">
+        <div className="eyebrow">ABOUT DEVTOOLS HUB</div>
+        <h1>About DevTools Hub</h1>
+        <p>DevTools Hub is an all-in-one platform designed to make everyday development tasks easier, faster, and more accessible. We bring useful developer utilities together in one simple place.</p>
+        <Link to="/tools" className="button button-primary">Explore All Tools <ArrowRight size={16} /></Link>
+      </section>
+
+      <section className="about-mission">
+        <span className="about-section-icon"><Sparkles size={20} /></span>
+        <div><div className="eyebrow">OUR MISSION</div><p>Our mission is to simplify everyday development tasks by providing developers, students, and beginners with easy-to-use tools in one convenient platform.</p></div>
+      </section>
+
+      <section className="about-section">
+        <SectionTitle title="What We Offer" subtitle="Practical tools for the work you do every day." />
+        <div className="about-offer-grid">
+          {offerCards.filter((card) => card.examples.length > 0).map(({ title, description, icon: Icon, examples }) => (
+            <article className="about-offer-card" key={title}>
+              <span className="about-card-icon"><Icon size={19} /></span>
+              <h3>{title}</h3>
+              <p>{description}</p>
+              <div className="about-example-list" aria-label={`${title} examples`}>
+                {examples.slice(0, 3).map((tool) => <Link key={tool.slug} to={`/tools/${tool.slug}`}>{tool.name}<ArrowUpRight size={12} /></Link>)}
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="about-section about-benefits-section">
+        <SectionTitle title="Why Choose DevTools Hub?" />
+        <div className="about-benefit-grid">
+          {benefits.map(([title, description, Icon]) => <article className="about-benefit-card" key={title}><span className="about-card-icon"><Icon size={18} /></span><div><h3>{title}</h3><p>{description}</p></div></article>)}
+        </div>
+      </section>
+
+      <section className="about-section">
+        <SectionTitle title="Who Can Use DevTools Hub?" subtitle="A helpful companion for anyone working with code or data." />
+        <div className="about-audience-grid">
+          {audiences.map(([title, description, Icon]) => <article className="about-audience-card" key={title}><span className="about-card-icon"><Icon size={18} /></span><h3>{title}</h3><p>{description}</p></article>)}
+        </div>
+      </section>
+
+      <section className="about-section about-how-section">
+        <SectionTitle title="How It Works" subtitle="Five simple steps from a task to a useful result." />
+        <ol className="about-steps">
+          {steps.map((step, index) => <li key={step}><span>{String(index + 1).padStart(2, '0')}</span><p>{step}</p></li>)}
+        </ol>
+      </section>
+
+      <section className="about-cta">
+        <div><div className="eyebrow">GET STARTED</div><h2>Ready to Make Development Easier?</h2><p>Explore our collection of developer tools and simplify your everyday workflow.</p></div>
+        <Link to="/tools" className="button button-primary">Explore All Tools <ArrowRight size={16} /></Link>
+      </section>
+    </article>
   )
 }
 
