@@ -5,8 +5,6 @@ export type AuthUser = {
   name: string
   email: string
   role: 'user' | 'admin'
-  favorites: string[]
-  recentlyUsed: string[]
 }
 
 export type AuthContextValue = {
@@ -14,7 +12,6 @@ export type AuthContextValue = {
   status: 'loading' | 'guest' | 'authenticated' | 'unavailable'
   authError: string
   login: (email: string, password: string) => Promise<void>
-  register: (name: string, email: string, password: string) => Promise<void>
   logout: () => Promise<void>
   toggleFavorite: (slug: string) => Promise<void>
   recordVisit: (slug: string) => void

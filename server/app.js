@@ -6,6 +6,7 @@ import rateLimit from 'express-rate-limit'
 import authRoutes from './routes/auth.js'
 import toolRoutes from './routes/tools.js'
 import adminRoutes from './routes/admin.js'
+import analyticsRoutes from './routes/analytics.js'
 import { HttpError } from './utils/httpError.js'
 
 const app = express()
@@ -32,6 +33,13 @@ app.use('/api', rateLimit({
   legacyHeaders: false,
   message: { error: 'Too many requests. Please try again later.' },
 }))
+app.use('/api/analytics', rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 90,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { error: 'Analytics event limit reached. Please try again later.' },
+}))
 
 app.get('/api/health', (_request, response) => {
   response.json({
@@ -42,12 +50,13 @@ app.get('/api/health', (_request, response) => {
 })
 app.use('/api/auth', rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 30,
+  limit: 12,
   standardHeaders: 'draft-8',
   legacyHeaders: false,
-  skip: (request) => !['POST'].includes(request.method) || !['/login', '/register'].includes(request.path),
+  skip: (request) => !['POST'].includes(request.method) || request.path !== '/login',
 }), authRoutes)
 app.use('/api/tools', toolRoutes)
+app.use('/api/analytics', analyticsRoutes)
 app.use('/api/admin', adminRoutes)
 app.use((_request, response) => {
   response.status(404).json({ error: 'API route not found.' })

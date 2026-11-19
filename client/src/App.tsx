@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { BrowserRouter, Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
-import { Activity, AlignLeft, ArrowDownToLine, ArrowRight, ArrowRightLeft, ArrowUpRight, BadgeCheck, Binary, Blend, Braces, Brackets, CalendarClock, CaseSensitive, Check, ChevronDown, ChevronRight, Clock3, Code2, CodeXml, Command, Copy, Database, ExternalLink, FileCode, FileCode2, FileJson2, FilePenLine, FileText, Fingerprint, GitCompareArrows, Globe2, Grid2X2, Hash, Heart, KeyRound, Languages, LayoutDashboard, Link as LinkIcon, Link2, ListChecks, ListX, Menu, Minimize, Minimize2, MonitorPlay, MonitorSmartphone, Moon, MoveLeft, Network, Palette, PanelsTopLeft, Paintbrush, Pipette, Play, QrCode, Regex, ScanSearch, ScanText, Search, Shield, ShieldCheck, Sparkles, Square, Sun, Table2, Terminal, TextQuote, Timer, Type, Unlink, Wrench, X, type LucideIcon } from 'lucide-react'
+import { Activity, AlignLeft, ArrowDownToLine, ArrowRight, ArrowRightLeft, ArrowUpRight, BadgeCheck, Binary, Blend, Braces, Brackets, CalendarClock, CaseSensitive, ChevronDown, ChevronRight, Clock3, Code2, CodeXml, Command, Copy, Database, ExternalLink, FileCode, FileCode2, FileJson2, FilePenLine, FileText, Fingerprint, GitCompareArrows, Globe2, Grid2X2, Hash, Heart, KeyRound, Languages, LayoutDashboard, Link as LinkIcon, Link2, ListChecks, ListX, Menu, Minimize, Minimize2, MonitorPlay, MonitorSmartphone, Moon, MoveLeft, Network, Palette, PanelsTopLeft, Paintbrush, Pipette, Play, QrCode, Regex, ScanSearch, ScanText, Search, Shield, ShieldCheck, Sparkles, Square, Sun, Table2, Terminal, TextQuote, Timer, Type, Unlink, Wrench, X, type LucideIcon } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import toast, { Toaster } from 'react-hot-toast'
 import { categories, findTool, type ToolDefinition } from './tools/catalog'
@@ -9,10 +9,13 @@ import { usePreferences } from './state/preferences'
 import { AuthProvider } from './context/AuthContext'
 import { useAuth } from './context/useAuth'
 import { api, getApiError } from './services/api'
+import AnalyticsTracker from './components/AnalyticsTracker'
+import { trackSearch, trackToolClick, trackToolExecution } from './services/analytics'
 import { useActiveTools, useAvailability } from './state/availability'
 import './App.css'
 
 const Editor = lazy(() => import('@monaco-editor/react'))
+const AdminDashboard = lazy(() => import('./pages/AdminDashboard'))
 
 const iconMap: Record<string, LucideIcon> = {
   Type, ScanText, CaseSensitive, MoveLeft, ListX, AlignLeft, GitCompareArrows, TextQuote,
@@ -62,14 +65,10 @@ function AppFrame() {
         ? `${category} tools — DevTools Hub`
         : location.pathname === '/tools'
           ? 'All developer tools — DevTools Hub'
-          : location.pathname === '/login'
-            ? 'Log in — DevTools Hub'
-            : location.pathname === '/register'
-              ? 'Create account — DevTools Hub'
-              : location.pathname === '/admin'
-                ? 'Admin — DevTools Hub'
-                : infoTitle
-                  ? `${infoTitle} — DevTools Hub`
+          : location.pathname.startsWith('/admin')
+            ? 'Private analytics — DevTools Hub'
+            : infoTitle
+                ? `${infoTitle} — DevTools Hub`
                 : 'DevTools Hub — Developer tools, all in one place'
     const description = tool?.description
       ?? (category ? `Browser-local ${category.toLowerCase()} tools for a faster, private developer workflow.` : infoTitle ? `${infoTitle} for DevTools Hub.` : 'A fast, private developer toolkit for formatting, encoding, debugging, and building.')
@@ -168,14 +167,14 @@ function AppFrame() {
         </header>
         <div className="page-scroll">
           <Routes>
-            <Route path="/" element={<Dashboard />} />
+            <Route path="/" element={<Dashboard onSearch={() => setSearchOpen(true)} />} />
             <Route path="/tools" element={<ToolDirectory />} />
             <Route path="/category/:category" element={<ToolDirectory />} />
             <Route path="/tools/:slug" element={<ToolPage key={location.pathname} />} />
-            <Route path="/login" element={<AuthPage mode="login" />} />
-            <Route path="/register" element={<AuthPage mode="register" />} />
+            <Route path="/login" element={<Navigate to="/admin" replace />} />
+            <Route path="/register" element={<Navigate to="/" replace />} />
             <Route path="/profile" element={<ProfilePage />} />
-            <Route path="/admin" element={<AdminPage />} />
+            <Route path="/admin" element={<Suspense fallback={<div className="admin-console"><div className="admin-loading">Loading private analytics…</div></div>}><AdminDashboard /></Suspense>} />
             <Route path="/privacy-policy" element={<LegalPage page="privacy" />} />
             <Route path="/terms-of-service" element={<LegalPage page="terms" />} />
             <Route path="/disclaimer" element={<LegalPage page="disclaimer" />} />
@@ -197,6 +196,7 @@ function AppFrame() {
         </div>
       </main>
       {searchOpen && <SearchDialog onClose={() => setSearchOpen(false)} />}
+      <AnalyticsTracker />
       <Toaster position="bottom-right" toastOptions={{ duration: 2600 }} />
     </div>
   )
@@ -212,7 +212,7 @@ function breadcrumb(path: string) {
   const toolMatch = path.match(/^\/tools\/([^/]+)/)
   if (toolMatch) return findTool(decodeURIComponent(toolMatch[1]))?.name ?? 'Tool'
   if (path.startsWith('/category/')) return decodeURIComponent(path.split('/')[2])
-  if (path === '/login' || path === '/register') return path.slice(1)
+  if (path === '/login' || path === '/register') return 'Overview'
   if (path === '/profile') return 'Profile'
   if (path === '/admin') return 'Admin'
   if (path === '/privacy-policy') return 'Privacy Policy'
@@ -248,23 +248,24 @@ const legalPages = {
         ],
       },
       {
-        heading: 'Accounts and activity',
+        heading: 'Anonymous analytics',
         paragraphs: [
-          'If account services are enabled, the service processes the name and email address you provide and stores a password hash, never your plaintext password. Favorites and recently used tool identifiers may be synced to your account.',
-          'Usage activity records the tool identifier, action, and timestamp. Tool inputs, generated passwords, and code are not included in those activity records.',
+          'DevTools Hub does not offer public user accounts or registration. The private administrator area uses an administrator-only session.',
+          'For site analytics, this browser creates random visitor and session identifiers. The server stores keyed hashes rather than those identifiers. Analytics may include public route paths (without query strings), tool identifiers, execution outcomes, visible-page duration estimates, referrer host, campaign tags, and coarse browser/device/operating-system categories. Raw IP addresses, full user-agent strings, tool inputs/outputs, generated passwords, and typed search terms are not stored.',
+          'On-site search analytics retain only query length and result count. Country reporting is enabled only when the operator configures a trusted reverse proxy country header.',
         ],
       },
       {
         heading: 'Browser storage and session cookies',
         paragraphs: [
-          'Theme, favorites, and recent-tool preferences can be stored in this browser using local storage. You can remove this local data through your browser settings.',
-          'When you sign in, the API uses an HttpOnly session cookie. Account data is stored in the MongoDB database configured by the site operator.',
+          'Theme, favorites, recent tools, and a random anonymous visitor identifier can be stored in local storage. A random session identifier is stored in session storage. You can remove these values through your browser settings.',
+          'The private administrator sign-in uses an HttpOnly session cookie. Public tool use does not require an account or cookie.',
         ],
       },
       {
         heading: 'Retention and questions',
         paragraphs: [
-          'Local preferences remain in your browser until you clear them. Account and activity data remain in the configured database until the site operator removes it. This app does not currently provide a self-service account deletion control.',
+          'Local preferences and the visitor identifier remain in this browser until you clear them. Analytics event, session, and visitor records expire automatically according to the operator-configured retention period (180 days by default). MongoDB TTL cleanup is asynchronous.',
           'A contact email can be configured by the site operator. If the Contact Us page says no support address is configured, contact the operator who provided this deployment.',
         ],
       },
@@ -282,9 +283,9 @@ const legalPages = {
         ],
       },
       {
-        heading: 'Accounts',
+        heading: 'Public access and administration',
         paragraphs: [
-          'If account registration is enabled, keep your credentials secure and provide accurate account details. Administrators may manage account roles and tool availability.',
+          'Visitors can use public tools without registering or logging in. Administrator sign-in is private and is provisioned by the site operator; public registration is disabled.',
         ],
       },
       {
@@ -401,7 +402,7 @@ function ToolCard({ tool, compact = false }: { tool: ToolDefinition; compact?: b
   }
   return (
     <article className={`tool-card ${compact ? 'tool-card-compact' : ''}`}>
-      <Link to={`/tools/${tool.slug}`} className="tool-card-main">
+      <Link to={`/tools/${tool.slug}`} className="tool-card-main" onClick={() => trackToolClick(tool.slug, `/tools/${tool.slug}`)}>
         <span className={`tool-icon icon-${categorySlug(tool.category)}`}><ToolIcon name={tool.icon} /></span>
         <span className="tool-card-copy">
           <span className="tool-card-title">{tool.name}</span>
@@ -421,7 +422,7 @@ function ToolCard({ tool, compact = false }: { tool: ToolDefinition; compact?: b
   )
 }
 
-function Dashboard() {
+function Dashboard({ onSearch }: { onSearch: () => void }) {
   const activeTools = useActiveTools()
   const favorites = usePreferences((state) => state.favorites)
   const recent = usePreferences((state) => state.recent)
@@ -432,30 +433,14 @@ function Dashboard() {
     <div className="page-content dashboard-page">
       <section className="welcome-panel">
         <div className="welcome-copy">
-          <div className="welcome-eyebrow"><span className="welcome-spark"><Sparkles size={13} /></span> YOUR DEVELOPER WORKSPACE</div>
-          <h1>Build better.<br /><span>Ship faster.</span></h1>
-          <p>All the little tools that make the big work easier.<br className="desktop-break" /> Fast, private, and ready when you are.</p>
+          <div className="welcome-eyebrow">FOR THE EVERYDAY WORKFLOW</div>
+          <h1>Useful tools for<br /><span>everyday development.</span></h1>
+          <p>Format code, compare text, convert data, and generate helpful snippets. Most processing stays in your browser.</p>
           <div className="welcome-actions">
-            <Link to="/tools" className="button button-primary">Explore all tools <ArrowRight size={16} /></Link>
+            <Link to="/tools" className="button button-primary">Browse all tools <ArrowRight size={16} /></Link>
+            <button type="button" className="button button-secondary home-search-button" onClick={onSearch}><Search size={15} />Search tools</button>
           </div>
         </div>
-        <div className="hero-art" aria-hidden="true">
-          <div className="hero-orbit orbit-one" /><div className="hero-orbit orbit-two" />
-          <div className="hero-terminal">
-            <div className="terminal-top"><span /><span /><span /><div>devtools-hub</div></div>
-            <div className="terminal-code"><span className="code-muted">01</span> <b>const</b> <i>workflow</i> = &#123;</div>
-            <div className="terminal-code"><span className="code-muted">02</span> &nbsp; tools: <em>[</em></div>
-            <div className="terminal-code"><span className="code-muted">03</span> &nbsp;&nbsp; <label>"all-in-one"</label>,</div>
-            <div className="terminal-code"><span className="code-muted">04</span> &nbsp;&nbsp; <label>"developer-first"</label></div>
-            <div className="terminal-code"><span className="code-muted">05</span> &nbsp; <em>]</em>,</div>
-            <div className="terminal-code"><span className="code-muted">06</span> &nbsp; friction: <span className="false">false</span></div>
-            <div className="terminal-code"><span className="code-muted">07</span> &#125;<span className="cursor-block" /></div>
-            <div className="terminal-status"><span /><span>All tools ready</span><code>local-first</code></div>
-          </div>
-          <div className="floating-chip chip-one"><Braces size={15} /> JSON ready</div>
-          <div className="floating-chip chip-two"><span className="chip-check"><Check size={12} /></span> Format complete</div>
-        </div>
-        <div className="hero-grid-pattern" />
       </section>
 
       <section className="stats-row" aria-label="Platform statistics">
@@ -466,7 +451,7 @@ function Dashboard() {
       </section>
 
       <section className="section-block">
-        <SectionTitle title="Quick access" subtitle="Popular tools, one click away." action={<Link to="/tools" className="text-link">Browse all <ArrowRight size={14} /></Link>} />
+        <SectionTitle title="Popular tools" subtitle="Common jobs, one click away." action={<Link to="/tools" className="text-link">Browse all <ArrowRight size={14} /></Link>} />
         <div className="tool-grid">{popular.map((tool) => <ToolCard key={tool.slug} tool={tool} />)}</div>
       </section>
       {(recentTools.length > 0 || favoriteTools.length > 0) && (
@@ -476,7 +461,7 @@ function Dashboard() {
         </div>
       )}
       <section className="category-strip">
-        <div><div className="eyebrow">PICK UP A TOOL</div><h2>One small thing, done well.</h2><p>Search {activeTools.length} tools for the task in front of you.</p></div>
+        <div><div className="eyebrow">BROWSE BY CATEGORY</div><h2>Go straight to the kind of work you’re doing.</h2><p>{activeTools.length} tools across {categories.length} practical categories.</p></div>
         <div className="category-pills">{categories.map((category) => <Link key={category} to={`/category/${encodeURIComponent(category)}`} className="category-pill"><span className={`category-dot dot-${categorySlug(category)}`} />{category}<ChevronRight size={13} /></Link>)}</div>
       </section>
     </div>
@@ -489,6 +474,7 @@ function SectionTitle({ title, subtitle, action }: { title: string; subtitle?: s
 
 function ToolDirectory() {
   const { category } = useParams()
+  const { pathname } = useLocation()
   const activeTools = useActiveTools()
   const [query, setQuery] = useState('')
   const selectedCategory = category ? decodeURIComponent(category) : ''
@@ -498,6 +484,11 @@ function ToolDirectory() {
     return matchesCategory && haystack.includes(query.toLowerCase().trim())
   }), [activeTools, selectedCategory, query])
   const grouped = categories.map((item) => [item, filtered.filter((tool) => tool.category === item)] as const).filter(([, list]) => list.length)
+  useEffect(() => {
+    if (!query.trim()) return
+    const timer = window.setTimeout(() => trackSearch(pathname, query.length, filtered.length), 700)
+    return () => window.clearTimeout(timer)
+  }, [filtered.length, pathname, query])
   return (
     <div className="page-content directory-page">
       <PageHeading eyebrow="TOOLBOX" title={selectedCategory || 'All tools'} description="Small, focused utilities to keep your workflow moving." action={<span className="result-count">{filtered.length} tools</span>} />
@@ -521,13 +512,20 @@ function SearchDialog({ onClose }: { onClose: () => void }) {
   const [activeIndex, setActiveIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   const navigate = useNavigate()
+  const { pathname } = useLocation()
   const matches = useMemo(() => {
     if (!query.trim()) return activeTools.slice(0, 8)
     const words = query.toLowerCase().trim().split(/\s+/)
     return activeTools.filter((tool) => words.every((word) => `${tool.name} ${tool.category} ${tool.description}`.toLowerCase().includes(word))).slice(0, 10)
   }, [activeTools, query])
   useEffect(() => { inputRef.current?.focus() }, [])
+  useEffect(() => {
+    if (!query.trim()) return
+    const timer = window.setTimeout(() => trackSearch(pathname, query.length, matches.length), 700)
+    return () => window.clearTimeout(timer)
+  }, [matches.length, pathname, query])
   const openTool = (slug: string) => {
+    trackToolClick(slug, `/tools/${slug}`)
     navigate(`/tools/${slug}`)
     onClose()
   }
@@ -558,6 +556,7 @@ const selectOptions = (tool: ToolDefinition) => tool.options ?? []
 
 function ToolPage() {
   const { slug = '' } = useParams()
+  const { pathname } = useLocation()
   const tool = findTool(slug)
   const isEnabled = useAvailability((state) => state.isEnabled(slug))
   const activeTools = useActiveTools()
@@ -585,14 +584,17 @@ function ToolPage() {
   const options = selectOptions(tool)
 
   const run = async () => {
+    const startedAt = performance.now()
     setBusy(true)
     setError('')
     try {
       const result = await processTool(tool.slug, input, auxiliary, { choice, indent: choice })
       setOutput(result)
+      trackToolExecution(tool.slug, pathname, true, performance.now() - startedAt)
     } catch (caught) {
       setOutput(null)
       setError(caught instanceof Error ? caught.message : 'Something went wrong while processing this input.')
+      trackToolExecution(tool.slug, pathname, false, performance.now() - startedAt)
     } finally {
       setBusy(false)
     }
@@ -683,7 +685,7 @@ function ToolPage() {
       </div>
       <div className="tool-info-grid">
         <section className="info-card"><div className="info-card-icon"><Activity size={17} /></div><div><h3>How to use</h3><p>Paste or type your content into the input. Adjust the available options, then select <strong>{runLabel(tool.slug)}</strong>. {tool.slug === 'ip-lookup' ? 'The IP address is sent to ipapi.co to complete the lookup.' : 'Your content is processed in this browser and isn’t uploaded.'}</p></div></section>
-        <section className="info-card related-card"><div className="info-card-icon"><Wrench size={17} /></div><div><h3>Related tools</h3><div className="related-links">{activeTools.filter((other) => other.category === tool.category && other.slug !== tool.slug).slice(0, 3).map((other) => <Link key={other.slug} to={`/tools/${other.slug}`}>{other.name}<ArrowRight size={13} /></Link>)}</div></div></section>
+        <section className="info-card related-card"><div className="info-card-icon"><Wrench size={17} /></div><div><h3>Related tools</h3><div className="related-links">{activeTools.filter((other) => other.category === tool.category && other.slug !== tool.slug).slice(0, 3).map((other) => <Link key={other.slug} to={`/tools/${other.slug}`} onClick={() => trackToolClick(other.slug, pathname)}>{other.name}<ArrowRight size={13} /></Link>)}</div></div></section>
       </div>
     </div>
   )
@@ -742,108 +744,17 @@ function CssPreview({ code }: { code: string }) {
   return <div className="sandbox-wrap css-preview"><div className="sandbox-label"><span className="output-live-dot" /> Live CSS preview</div><iframe title="Generated CSS preview" sandbox="" srcDoc={srcDoc} /></div>
 }
 
-function AuthPage({ mode }: { mode: 'login' | 'register' }) {
-  const isRegister = mode === 'register'
-  const { login, register } = useAuth()
-  const navigate = useNavigate()
-  const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState('')
-  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    setSubmitting(true)
-    setError('')
-    const form = new FormData(event.currentTarget)
-    try {
-      if (isRegister) await register(String(form.get('name')), String(form.get('email')), String(form.get('password')))
-      else await login(String(form.get('email')), String(form.get('password')))
-      toast.success(isRegister ? 'Your account is ready.' : 'Welcome back.')
-      navigate('/')
-    } catch (caught) {
-      setError(getApiError(caught, 'Could not authenticate.'))
-    } finally {
-      setSubmitting(false)
-    }
-  }
-  return <div className="page-content auth-page">
-    <div className="auth-card">
-      <span className="brand-mark auth-brand"><Command size={20} /></span>
-      <div className="eyebrow">DEVTOOLS HUB ACCOUNT</div>
-      <h1>{isRegister ? 'Create your account' : 'Welcome back'}</h1>
-      <p>{isRegister ? 'Save favorites and sync your recent tools.' : 'Log in to access your saved tools and profile.'}</p>
-      <form className="auth-form" onSubmit={submit}>
-        {isRegister && <label>Full name<input type="text" name="name" autoComplete="name" required placeholder="Ada Lovelace" /></label>}
-        <label>Email address<input type="email" name="email" autoComplete="email" required placeholder="you@example.com" /></label>
-        <label>Password<input type="password" name="password" autoComplete={isRegister ? 'new-password' : 'current-password'} minLength={8} maxLength={128} required placeholder="At least 8 characters" /></label>
-        {error && <div className="auth-error" role="alert">{error}</div>}
-        <button type="submit" className="button button-primary auth-submit" disabled={submitting}>{submitting ? 'Please wait…' : isRegister ? 'Create account' : 'Log in'} <ArrowRight size={15} /></button>
-      </form>
-      <div className="auth-switch">{isRegister ? 'Already have an account?' : 'New to DevTools Hub?'} <Link to={isRegister ? '/login' : '/register'}>{isRegister ? 'Log in' : 'Create an account'}</Link></div>
-      <div className="auth-privacy"><Shield size={14} /> Your tool inputs are never stored in your account.</div>
-    </div>
-  </div>
-}
-
 function ProfilePage() {
   const favorites = usePreferences((state) => state.favorites)
   const recent = usePreferences((state) => state.recent)
   const activeTools = useActiveTools()
-  const { user, logout, status } = useAuth()
+  const { user, logout } = useAuth()
   const navigate = useNavigate()
   const signOut = async () => {
     try { await logout(); toast.success('You have been logged out.'); navigate('/') }
     catch (error) { toast.error(getApiError(error, 'Could not log out.')) }
   }
-  return <div className="page-content"><PageHeading eyebrow="ACCOUNT" title="Your profile" description={user ? 'Your account and saved developer tools.' : 'Your saved tools and recent activity are stored on this device.'} /><div className="profile-summary"><div className="profile-avatar">{user?.name.charAt(0).toUpperCase() ?? 'G'}</div><div><strong>{user?.name ?? 'Guest workspace'}</strong><span>{user?.email ?? (status === 'unavailable' ? 'Account service is unavailable' : 'Local browser preferences')}</span></div>{user ? <button className="button button-secondary" onClick={() => void signOut()}>Log out</button> : <Link to="/register" className="button button-primary">Create account</Link>}</div>{user?.role === 'admin' && <Link to="/admin" className="button button-secondary admin-link">Open admin dashboard <ArrowRight size={14} /></Link>}<SectionTitle title="Saved tools" /><div className="tool-grid">{favorites.length ? favorites.map((slug) => findTool(slug)).filter((tool): tool is ToolDefinition => !!tool && activeTools.some((active) => active.slug === tool.slug)).map((tool) => <ToolCard key={tool.slug} tool={tool} />) : <p className="subtle-copy">Use the heart on any tool to save it here.</p>}</div><div className="profile-recent"><SectionTitle title="Recent tools" /><div className="tool-grid">{recent.length ? recent.map((slug) => findTool(slug)).filter((tool): tool is ToolDefinition => !!tool && activeTools.some((active) => active.slug === tool.slug)).map((tool) => <ToolCard key={tool.slug} tool={tool} />) : <p className="subtle-copy">Tools you open will appear here.</p>}</div></div></div>
-}
-
-function AdminPage() {
-  const { user, status } = useAuth()
-  const setToolEnabled = useAvailability((state) => state.setToolEnabled)
-  const [data, setData] = useState<{ stats: { totalUsers: number; activeTools: number; totalTools: number; totalActivity: number }; popularTools: Array<{ name: string; slug: string; category: string; usageCount: number; isActive: boolean }> } | null>(null)
-  const [users, setUsers] = useState<Array<{ _id: string; name: string; email: string; role: 'user' | 'admin'; createdAt: string }>>([])
-  const [adminTools, setAdminTools] = useState<Array<{ name: string; slug: string; category: string; isActive: boolean; usageCount: number }>>([])
-  const [error, setError] = useState('')
-  const [view, setView] = useState<'overview' | 'users' | 'tools'>('overview')
-  const [refreshKey, setRefreshKey] = useState(0)
-  useEffect(() => {
-    if (user?.role !== 'admin') return
-    let active = true
-    void Promise.all([api.get('/admin/stats'), api.get('/admin/tools'), api.get('/admin/users')])
-      .then(([stats, toolResult, userResult]) => {
-        if (!active) return
-        setData(stats.data)
-        setAdminTools(toolResult.data.tools)
-        setUsers(userResult.data.users)
-        setError('')
-      })
-      .catch((caught: unknown) => {
-        if (active) setError(getApiError(caught, 'Could not load administrator data.'))
-      })
-    return () => { active = false }
-  }, [user?.role, refreshKey])
-  if (status === 'loading') return <div className="page-content"><p className="subtle-copy">Checking administrator access…</p></div>
-  if (!user) return <Navigate to="/login" replace />
-  if (user.role !== 'admin') return <div className="page-content"><PageHeading eyebrow="403 · FORBIDDEN" title="Administrator access required" description="This area is only available to administrator accounts." /><Link to="/profile" className="button button-secondary">Back to profile</Link></div>
-  const updateTool = async (slug: string, isActive: boolean) => {
-    try {
-      const { data: result } = await api.patch(`/admin/tools/${encodeURIComponent(slug)}`, { isActive })
-      setAdminTools((existing) => existing.map((tool) => tool.slug === slug ? result.tool : tool))
-      setToolEnabled(slug, isActive)
-    } catch (caught) { toast.error(getApiError(caught, 'Could not update tool status.')) }
-  }
-  const updateRole = async (id: string, role: 'user' | 'admin') => {
-    try {
-      const { data: result } = await api.patch(`/admin/users/${encodeURIComponent(id)}/role`, { role })
-      setUsers((existing) => existing.map((item) => item._id === id ? result.user : item))
-    } catch (caught) { toast.error(getApiError(caught, 'Could not update user role.')) }
-  }
-  return <div className="page-content"><PageHeading eyebrow="ADMINISTRATION" title="Platform overview" description="Manage tools, users, and platform activity." action={<button className="button button-secondary" onClick={() => setRefreshKey((key) => key + 1)}>Refresh</button>} />
-    {error && <div className="admin-error" role="alert">{error}{error.includes('administrator') && <Link to="/profile">Return to profile</Link>}</div>}
-    <div className="admin-tabs">{(['overview', 'users', 'tools'] as const).map((item) => <button key={item} className={view === item ? 'selected' : ''} onClick={() => setView(item)}>{item === 'overview' ? 'Overview' : item === 'users' ? `Users (${users.length})` : `Tools (${adminTools.length})`}</button>)}</div>
-    {view === 'overview' && <><div className="admin-stats">{[['Registered users', data?.stats.totalUsers], ['Active tools', data?.stats.activeTools], ['Total tool usage', data?.stats.totalActivity]].map(([label, value]) => <div key={String(label)}><span>{label}</span><strong>{value ?? '—'}</strong><small>Platform statistics from MongoDB</small></div>)}</div><SectionTitle title="Most used tools" /><div className="admin-table"><div className="admin-table-head"><span>Tool</span><span>Category</span><span>Uses</span><span>Status</span></div>{data?.popularTools.map((tool) => <div className="admin-table-row" key={tool.slug}><strong>{tool.name}</strong><span>{tool.category}</span><span>{tool.usageCount}</span><span>{tool.isActive ? 'Active' : 'Disabled'}</span></div>)}</div></>}
-    {view === 'users' && <div className="admin-table"><div className="admin-table-head"><span>User</span><span>Email</span><span>Joined</span><span>Role</span></div>{users.map((item) => <div className="admin-table-row" key={item._id}><strong>{item.name}</strong><span>{item.email}</span><span>{new Date(item.createdAt).toLocaleDateString()}</span><select value={item.role} onChange={(event) => void updateRole(item._id, event.target.value as 'user' | 'admin')} disabled={item._id === user.id}><option value="user">User</option><option value="admin">Admin</option></select></div>)}</div>}
-    {view === 'tools' && <div className="admin-table"><div className="admin-table-head"><span>Tool</span><span>Category</span><span>Usage</span><span>Availability</span></div>{adminTools.map((tool) => <div className="admin-table-row" key={tool.slug}><strong>{tool.name}</strong><span>{tool.category}</span><span>{tool.usageCount}</span><button className={`status-toggle ${tool.isActive ? 'status-enabled' : ''}`} onClick={() => void updateTool(tool.slug, !tool.isActive)}>{tool.isActive ? 'Active' : 'Disabled'}</button></div>)}</div>}
-  </div>
+  return <div className="page-content"><PageHeading eyebrow="LOCAL WORKSPACE" title="Your saved tools" description="Favorites and recent tools are kept in this browser. No account is needed." /><div className="profile-summary"><div className="profile-avatar">{user?.name.charAt(0).toUpperCase() ?? 'G'}</div><div><strong>{user?.name ?? 'Guest workspace'}</strong><span>{user ? 'Administrator session' : 'Preferences stored on this device'}</span></div>{user && <button className="button button-secondary" onClick={() => void signOut()}>Log out</button>}</div>{user?.role === 'admin' && <Link to="/admin" className="button button-secondary admin-link">Open private analytics <ArrowRight size={14} /></Link>}<SectionTitle title="Saved tools" /><div className="tool-grid">{favorites.length ? favorites.map((slug) => findTool(slug)).filter((tool): tool is ToolDefinition => !!tool && activeTools.some((active) => active.slug === tool.slug)).map((tool) => <ToolCard key={tool.slug} tool={tool} />) : <p className="subtle-copy">Use the heart on any tool to save it here.</p>}</div><div className="profile-recent"><SectionTitle title="Recent tools" /><div className="tool-grid">{recent.length ? recent.map((slug) => findTool(slug)).filter((tool): tool is ToolDefinition => !!tool && activeTools.some((active) => active.slug === tool.slug)).map((tool) => <ToolCard key={tool.slug} tool={tool} />) : <p className="subtle-copy">Tools you open will appear here.</p>}</div></div></div>
 }
 
 function NotFound() {
